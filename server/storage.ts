@@ -1,4 +1,4 @@
-import { eq, and, asc } from "drizzle-orm";
+import { eq, and, asc, lt } from "drizzle-orm";
 import { db } from "./db";
 import {
   raffleConfig, prizes, participants, winners,
@@ -108,7 +108,28 @@ export class DatabaseStorage implements IStorage {
       .where(and(eq(prizes.id, prizeId), eq(prizes.raffleId, DEFAULT_RAFFLE_ID)));
   }
 
+  async cleanExpiredReservations(): Promise<number> {
+    const expireTime = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const expired = await db.select().from(participants)
+      .where(and(
+        eq(participants.raffleId, DEFAULT_RAFFLE_ID),
+        eq(participants.status, 'reserved'),
+        lt(participants.reservedAt, expireTime)
+      ));
+    if (expired.length > 0) {
+      console.log(`[cleanup] Liberando ${expired.length} reservas expiradas: tickets ${expired.map(e => e.ticketNumber).join(', ')}`);
+      await db.delete(participants)
+        .where(and(
+          eq(participants.raffleId, DEFAULT_RAFFLE_ID),
+          eq(participants.status, 'reserved'),
+          lt(participants.reservedAt, expireTime)
+        ));
+    }
+    return expired.length;
+  }
+
   async getParticipants(): Promise<Participant[]> {
+    await this.cleanExpiredReservations();
     return db.select().from(participants)
       .where(eq(participants.raffleId, DEFAULT_RAFFLE_ID))
       .orderBy(asc(participants.ticketNumber));
@@ -141,6 +162,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getTicketStatus(ticketNumber: number): Promise<string> {
+    await this.cleanExpiredReservations();
     const result = await db.select().from(participants)
       .where(and(
         eq(participants.raffleId, DEFAULT_RAFFLE_ID),

@@ -127,6 +127,8 @@ export function RaffleProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     refreshData();
+    const interval = setInterval(refreshData, 30000);
+    return () => clearInterval(interval);
   }, [refreshData]);
 
   const updateConfig = async (newConfig: Partial<RaffleConfig>) => {
